@@ -14,19 +14,19 @@ b <- babynames[babynames$sex == "F", ]
 # Set parameters for the simulation
 # For now, these are low to test.  In reality, we'll probably want to start in
 # like 1920, do 100 reps and 80 years or so.
-base_year <- 1880
-n_reps <- 50
-n_years <- 20
+base.year <- 1880
+n.repss <- 5
+n.years <- 5
 
 # Filter for just names in base year.
-b.base <- b[b$year == base_year, ]
+b.base <- b[b$year == base.year, ]
 
 # Define a function to calculate survivorship over time vs base year.
 CalcSurv <- function(x) {sum(b.base$name %in% x) / nrow(b.base)}
 
 # Calculate survivorship over time for real data, fit a linear model of the
 #relationship, plot and extract the slope.
-surv.r <- b[b$year > base_year, c(1, 3)] %>%
+surv.r <- b[b$year > base.year, c(1, 3)] %>%
   group_by(year) %>%
   summarize(survivorship = CalcSurv(name))
 surv.m <- lm(data = surv.r, survivorship ~ year)
@@ -52,7 +52,7 @@ for (i in 1:nrow(b.base)) {
 # 2) An empty list to store each simulation run.
 # 3) An empty DF to store the slope of each model
 seed <- data.frame(
-  year = base_year,
+  year = base.year,
   data = I(list(names.s)),
   pop = length(names.s),
   surv = 1)
@@ -62,23 +62,23 @@ slopes <- data.frame(run = integer(), slope = integer())
 # Starting one after the base year, take a number of samples from the previous
 # year equal to the population in that year.  Complete this exercise for the
 # preset number of years and reps, saving each rep to the complete.runs object.
-for (i in 1:n_reps) {
+for (i in 1:n.repss) {
   run.hist <- seed
-  for (j in 1:n_years) {
+  for (j in 1:n.years) {
     smp <- sample(run.hist[[j, 2]], pop[[j + 1, 2]], replace = TRUE)
     run.hist.row <- data.frame(
-      year = j + base_year,
+      year = j + base.year,
       data = I(list(smp)),
       pop = length(smp),
       surv = CalcSurv(smp))
     run.hist <- rbind(run.hist, run.hist.row)
-    if(j == n_years) {complete.runs[[i]] <- run.hist[-1, ]}
+    if(j == n.years) {complete.runs[[i]] <- run.hist[-1, ]}
   }
 }
 
 # For each simulation, fit a linear model, extract the slope, and save it to
 # the slope vector.
-for (i in 1:n_reps) {
+for (i in 1:n.repss) {
   temp <- data.frame(
     run = i,
     slope = lm(
@@ -98,79 +98,69 @@ ggplot(slopes, aes(x = slope)) +
 # the neutral model as being outside the 95% confidence intervals. Why might
 # that be? Well, perhaps, in reality, parents don't actually sample names
 # randomly but instead have a preference for rare names and against common
-# names.  Let's build and test a neutral model that functions that way.
+# names. Some names have more fitness than others!
 
-# Instead of using a vector of names, let's use a dataframe that contains a
-# sampling weight for each name.  This is arbitrary, but we'll say that the top
-# 10% of names ranked by commonness get a down-weighted to .9, the bottom 10%
-# get up-weighted to 1.1, then otherwise everything else has a weight of 1.
-names.s.w <- data.frame(names = names.s)
-names.ref <- names.s.w %>%
-  group_by(names) %>%
-  summarize(count = n()) %>%
-  arrange(desc(count))
-names.ref <- names.ref %>%
-  mutate(
-    weight = ifelse(
-      row_number() <= round(nrow(names.ref) / 10),
-      1 / nrow(names.ref) * .9,
-      ifelse(
-        row_number() >= nrow(names.ref) - round(nrow(names.ref) / 10) + 1,
-        1 / nrow(names.ref) * 1.1,
-        1 / nrow(names.ref))
-    ))
-names.s.w <- left_join(names.s.w, names.ref[, c(1, 3)], by = "names")
+# To test this, instead of sampling randomly, we can weight our sampling so that
+# rare names get a boost (are fitter) and common names get downgraded (are less)
+# fit.  So, let's write a function to derive weights for a vector of names.
+# This is a bit arbitrary, but let's say that the top 10% of names by commonness
+# get a 10% downgrade and the bottom 10% get a 10% boost.
+
+# Takes in a vector of names and returns a vector of weights.
+CreateWeightsVector <- function(x) {
+  weights.by.name <- data.frame(names = x) %>%
+    group_by(names) %>%
+    summarize(count = n()) %>%
+    arrange(desc(count)) %>%
+    mutate(
+      weight = ifelse(
+        row_number() <= round(length(unique(x)) / 10),
+        1 / length(unique(x)) * .9,
+        ifelse(
+          row_number() >= length(unique(x)) - round(length(unique(x)) / 10) + 1,
+          1 / length(unique(x)) * 1.1,
+          1 / length(unique(x)))
+      ))
+  weight.vector <- left_join(
+    data.frame(names = x),
+    weights.by.name[, c(1, 3)],
+    by = "names")[, 2]
+  return(weight.vector)
+  }
 
 # Again, we need to start with 3 global objects for use in the simulation.
 seed.w <- data.frame(
-  year = base_year,
-  data = I(list(names.s.w$names)),
-  weights = I(list(names.s.w$weight)),
-  pop = nrow(names.s.w),
+  year = base.year,
+  data = I(list(names.s)),
+  weights = I(list(CreateWeightsVector(names.s))),
+  pop = length(names.s),
   surv = 1)
 complete.runs.w = list()
 slopes.w <- data.frame(run = integer(), slope = integer())
 
 # Then, we rerun our simulations exactly the same, except now with weighting.
-for (i in 1:n_reps) {
+for (i in 1:n.repss) {
   run.hist <- seed.w
-  for (j in 1:n_years) {
+  for (j in 1:n.years) {
     smp <- sample(
       run.hist[[j, 2]],
       pop[[j + 1, 2]],
       prob = run.hist[[j, 3]],
       replace = TRUE)
-    # TODO:  Make all this more efficient.  Idk, should prob be a function.
-    temp.names <- data.frame(names = smp)
-    temp.weights <- temp.names %>%
-      group_by(names) %>%
-      summarize(count = n()) %>%
-      arrange(desc(count))
-    temp.weights <- temp.weights %>%
-      mutate(
-        weight = ifelse(
-          row_number() <= round(nrow(temp.weights) / 10),
-          1 / nrow(temp.weights) * .9,
-          ifelse(
-            row_number() >= nrow(temp.weights) - round(nrow(temp.weights) / 10) + 1,
-            1 / nrow(temp.weights) * 1.1,
-            1 / nrow(temp.weights))
-        ))
-    temp.names <- left_join(temp.names, temp.weights[, c(1, 3)], by = "names")
     run.hist.row <- data.frame(
-      year = j + base_year,
-      data = I(list(temp.names[, 1])),
-      weights = I(list(temp.names[, 2])),
+      year = j + base.year,
+      data = I(list(smp)),
+      weights = I(list(CreateWeightsVector(smp))),
       pop = length(smp),
       surv = CalcSurv(smp))
     run.hist <- rbind(run.hist, run.hist.row)
-    if(j == n_years) {complete.runs.w[[i]] <- run.hist[-1, ]}
+    if(j == n.years) {complete.runs.w[[i]] <- run.hist[-1, ]}
   }
 }
 
 # Everything else is exactly the same.  We fit linear models and plot a
 # histogram of their slopes.
-for (i in 1:n_reps) {
+for (i in 1:n.repss) {
   temp <- data.frame(
     run = i,
     slope = lm(
