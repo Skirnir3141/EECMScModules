@@ -23,7 +23,7 @@ library(scales)
 # model, 5) perc of top/bottom names to have their weight adjusted.
 base.year <- 1920
 n.reps <- 100
-n.years <- 30
+n.years <- 50
 wt <- .05
 perc <- .1
 ```
@@ -154,11 +154,11 @@ plt <- ggplot2::ggplot(slopes, aes(x = slope)) +
     colour = "blue",
     size = 6,
     shape = 8) +
-  ggplot2::geom_text(
-    aes(x = arrange(slopes, slope)[100, 2], y = 20),
+  ggplot2::geom_label(
+    aes(x = arrange(slopes, slope)[100, 2], y = 10),
     label = "Simulation Slopes",
     size = 3) +
-  ggplot2::geom_text(
+  ggplot2::geom_label(
     aes(x = slope.r, y = 2),
     label = "Real Slope",
     size = 3) +
@@ -251,11 +251,11 @@ ggplot2::ggplot(slopes.w, aes(x = slope)) +
     colour = "blue",
     size = 6,
     shape = 8) +
-  ggplot2::geom_text(
-    aes(x = arrange(slopes.w, slope)[100, 2], y = 20),
+  ggplot2::geom_label(
+    aes(x = arrange(slopes.w, slope)[100, 2], y = 10),
     label = "Simulation Slopes",
     size = 3) +  
-  ggplot2::geom_text(
+  ggplot2::geom_label(
     aes(x = slope.r, y = 0),
     label = "Real Slope",
     nudge_y = 2,
@@ -263,15 +263,21 @@ ggplot2::ggplot(slopes.w, aes(x = slope)) +
   ggplot2::labs(x = "Slope", y = "Count") +
   ggplot2::expand_limits(x = layer_scales(plt)$x$range$range[1])
 
-# Evaluate whether real slope is within 96% confidence intervals
+# We know that the inheritance model will shift the simulation distribution to
+# the right. So, the real slope will either be in the 95% p-value range of the
+# simulation distribution, or it will be to the right of it, or to the left of
+# it.  To distinguish between these three cases and use different summary text,
+# we need two flags.
 in.p <- slope.r >= arrange(
   slopes.w, slope)[3, 2] & slope.r <= arrange(slopes.w, slope)[97, 2]
+l <- slope.r <= arrange(slopes.w, slope)[3, 2]
 
-# Outcome text for the two possibilities
-# TODO: Re-write both of these.
-in.p.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which they go extinct.  More importantly, now the real slope of a linear model fit through survivorship falls within ~ 95% of the simulation run slopes.  This suggests that this model in which inheritance is not neutral could have generated the data we observe in the real world. This is evidence that parents do not pick their baby's name stochastically, but instead on some basis which results in some names having more fitness and some names less.  In other words, a neutral model does not hold."
+# Outcome text for the three possibilities
+in.p.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which they go extinct.  More importantly, now the real slope of a linear model fit through survivorship falls within ~ 95% of the simulation run slopes.  This suggests that this model in which inheritance is not neutral could have generated the data we observe in the real world. Of course, even this does not truly prove causation. This is only one potential model, not necessarily the best and not necessarily one that functions according to the process that exists in the real world. To prove that it does, we would need to muster more evidence. But, we can say that these simulations suggest that a truly neutral model is unlikely to be able to explain baby name inheritance. The process of name inheritance likely involves some degree of selective pressure."
 
-not.in.p.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which names go extinct.  Although, just as in the first model, this model is not statistically significant.  But, perhaps if we were to develop a more sophisticated understanding of how inheritance might be functioning in the real world data, we could build an inheritance model that produces simulated results in line with what we see in reality."
+l.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which names go extinct.  Although, just as in the first model, this model is not statistically significant.  In this case, the simulation produced years in which survivorship decayed slower than we see in reality. Perhaps if we were to develop a more sophisticated understanding of how inheritance might be functioning in the real world data, we could build an inheritance model that could produce statistically significant results. Regardless, such a model would not truly prove causation. To do that, we would need to muster more evidence. But, we can say that these simulations suggest that a truly neutral model is unlikely to be able to explain baby name inheritance. The process of name inheritance likely involves some degree of selective pressure."
+
+r.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which names go extinct.  Although, just as in the first model, this model is not statistically significant.  In this case, the simulation produced years in which survivorship decayed faster than we see in reality. Perhaps if we were to develop a more sophisticated understanding of how inheritance might be functioning in the real world data, we could build an inheritance model that could produce statistically significant results. Regardless, such a model would not truly prove causation. To do that, we would need to muster more evidence. But, we can say that these simulations suggest that a truly neutral model is unlikely to be able to explain baby name inheritance. The process of name inheritance likely involves some degree of selective pressure."
 ```
 
-`r ifelse(in.p, in.p.t, not.in.p.t)`
+`r ifelse(in.p, in.p.t, ifelse(l, l.t, r.t))`
