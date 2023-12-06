@@ -16,6 +16,7 @@ rm(list=ls())
 library(babynames)
 library(dplyr)
 library(ggplot2)
+library(scales)
 
 # Set simulation parameters: 1) base year, 2) number of simulation reps, 3)
 # number of years after base year to create, 4) weighting factor in weighted
@@ -34,7 +35,7 @@ In this practical, we were tasked with proposing and falsify a simple neutral mo
 
 First, let's explore our real world data.  We'll examine only female names to avoid confusion around names that occur for both sexes.
 
-```{r explore_pop, echo=FALSE, out.width="75%", out.height="75%", error=FALSE, warning=FALSE, message=FALSE}
+```{r explore_pop, echo=FALSE, out.width="75%", out.height="75%", fig.align='center', error=FALSE, warning=FALSE, message=FALSE}
 # Capture female baby names.
 b <- babynames[babynames$sex == "F", ]
 
@@ -46,7 +47,7 @@ As expected, population varies over time.  We could use any time period for our 
 
 Next we need to decide what population parameter we'd like to test.  One dynamic that might be interesting to look at is survivorship. Among female names in `r base.year`, what percentage were inherited in the following years? Let's look at that in the real data over a `r n.years` year period (I'd like to do more years, but this is again so that my computer doesn't explode).
 
-```{r explore_surv, echo=FALSE, out.width="75%", out.height="75%", error=FALSE, warning=FALSE, message=FALSE}
+```{r explore_surv, echo=FALSE, out.width="75%", out.height="75%", fig.align='center', error=FALSE, warning=FALSE, message=FALSE}
 
 # Filter for just names in base year.
 b.base <- b[b$year == base.year, ]
@@ -62,7 +63,7 @@ plot(surv.r$year, surv.r$survivorship, xlab = "Year", ylab = "Survivorship")
 ```
 The relationship looks more or less linear, so let's fit a linear model to it and extract the slope.
 
-```{r explore_surv_mod, echo=FALSE, out.width="75%", out.height="75%"}
+```{r explore_surv_mod, echo=FALSE, out.width="75%", out.height="75%", fig.align='center'}
 # Fit a linear model to the data, plot it, and extract its slope
 plot(surv.r$year, surv.r$survivorship, xlab = "Year", ylab = "Survivorship")
 surv.m <- lm(data = surv.r, survivorship ~ year)
@@ -89,15 +90,13 @@ for (i in 1:nrow(b.base)) {
 
 # Create global objects for the simulation to act upon.
 # 1) A DF to contain the results for each year of a given simulation run. This
-# will contain the year, sampled names, population per the sampling (to confirm
-# behavior), and survivorship.
+# will contain the year, sampled names, and survivorship.
 # 2) An empty list to store each simulation run.
 # 3) An empty DF to store the slope of the linear model fitted on each
 # simulation run.
 seed <- data.frame(
   year = base.year,
   data = I(list(names.s)),
-  pop = length(names.s),
   surv = 1)
 complete.runs = list()
 slopes <- data.frame(run = integer(), slope = integer())
@@ -111,7 +110,6 @@ for (i in 1:n.reps) {
     run.hist.row <- data.frame(
       year = j + base.year,
       data = I(list(smp)),
-      pop = length(smp),
       surv = CalcSurv(smp))
     run.hist <- rbind(run.hist, run.hist.row)
     if(j == n.years) {complete.runs[[i]] <- run.hist[-1, ]}
@@ -140,7 +138,7 @@ What do you know?  The real world slope fell far outside of the histogram of sim
 
 One possibility is that parents might have a preference for some names over others (i.e., that selective pressure acts on name inheritence!).  For example, perhaps parents tend to prefer rare names and avoid common names. Who wants to be like everyone else? At some point, [how many Olivias](https://www.ssa.gov/oact/babynames/top5names.html) can there be?
 
-To test this, instead of simulating a truly neutral model, let's simulate a model in which some names are fitter than others. This is arbitrary, but let's say that the top 10% of names by frequency in any given year get a 10% downgrade in their likelihood of being inherited and the bottom 10% get a 10% boost. The model will otherwise be identical.  We'll still start in `r base.year`, sample each year from the names of the previous run, and run it for `r n.years` years across `r n.reps` simulation runs.
+To test this, instead of simulating a truly neutral model, let's simulate a model in which some names are fitter than others. This is arbitrary, but let's say that the top `r scales::percent(perc)` of names by frequency in any given year get a `r scales::percent(wt)` downgrade in their likelihood of being inherited and the bottom `r scales::percent(perc)` get a `r scales::percent(wt)` boost. The model will otherwise be identical.  We'll still start in `r base.year`, sample each year from the names of the previous run, and run it for `r n.years` years across `r n.reps` simulation runs.
 
 What happens if we run a model like this?
 
@@ -177,7 +175,6 @@ seed.w <- data.frame(
   year = base.year,
   data = I(list(names.s)),
   weights = I(list(CreateWeightsVector(names.s))),
-  pop = length(names.s),
   surv = 1)
 complete.runs.w = list()
 slopes.w <- data.frame(run = integer(), slope = integer())
@@ -195,7 +192,6 @@ for (i in 1:n.reps) {
       year = j + base.year,
       data = I(list(smp)),
       weights = I(list(CreateWeightsVector(smp))),
-      pop = length(smp),
       surv = CalcSurv(smp))
     run.hist <- rbind(run.hist, run.hist.row)
     if(j == n.years) {complete.runs.w[[i]] <- run.hist[-1, ]}
@@ -218,17 +214,14 @@ ggplot(slopes.w, aes(x = slope)) +
   geom_point(aes(x = slope.r, y = 0), colour = "blue", size = 6, shape = 8)
 
 # Evaluate whether real slope is within 96% confidence intervals
-in.p <- slope.r >= arrange(slopes.w, slope)[3, 2] & 
-  slope.r <= arrange(slopes.w, slope)[97, 2]
-not.in.p <- !in.p
+in.p <- slope.r >= arrange(
+  slopes.w, slope)[3, 2] & slope.r <= arrange(slopes.w, slope)[97, 2]
+
+# Outcome text for the two possibilities
+# TODO: Re-write both of these.
+in.p.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which they go extinct.  More importantly, now the real slope of a linear model fit through survivorship falls within ~ 95% of the simulation run slopes.  This suggests that this model in which inheritance is not neutral could have generated the data we observe in the real world. This is evidence that parents do not pick their baby's name stochastically, but instead on some basis which results in some names having more fitness and some names less.  In other words, a neutral model does not hold."
+
+not.in.p.t <- "As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which names go extinct.  Although, just as in the first model, this model is not statistically significant.  But, perhaps if we were to develop a more sophisticated understanding of how inheritance might be functioning in the real world data, we could build an inheritance model that produces simulated results in line with what we see in reality."
 ```
 
-```{r conditional_block_one, eval=in.p, error=FALSE, warning=FALSE, message=FALSE}
-# TODO:  Make this make more sense.
-print("As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which they go extinct.  More importantly, now the real slope of a linear model fit through survivorship falls within ~ 95% of the simulation run slopes.  This suggests that this model in which inheritance is not neutral could have generated the data we observe in the real world. This is evidence that parents do not pick their baby's name stochastically, but instead on some basis which results in some names having more fitness and some names less.  In other words, a neutral model does not hold.")
-```
-
-```{r conditional_block_two, eval=not.in.p, error=FALSE, warning=FALSE, message=FALSE}
-# TODO:  Make this make more sense.
-print("As you can see, now that we have given a positive weight to uncommon names in our simulation, the histogram of slopes is to the right of where the distribution was in the first simulation.  This makes sense! Giving uncommon names a boost in fitness slows down the rate at which names go extinct.  Although, just as in the first model, this model is not statistically significant.  But, perhaps if we were to develop a more sophisticated understanding of how inheritance might be functioning in the real world data, we could build an inheritance model that produces simulated results in line with what we see in reality.")
-```
+`r ifelse(in.p, in.p.t, not.in.p.t)`
