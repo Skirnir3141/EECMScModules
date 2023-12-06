@@ -10,7 +10,7 @@ urlcolor: blue
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
+```{r load, echo = FALSE, error=FALSE, warning=FALSE, message=FALSE}
 # Clear the workspace and load libraries.
 rm(list=ls())
 library(babynames)
@@ -41,7 +41,9 @@ b <- babynames[babynames$sex == "F", ]
 
 # Derive population over time and plot
 pop <- dplyr::summarize(dplyr::group_by(b, year), pop_size = sum(n))
-plot(pop$pop_size ~ pop$year, xlab = "Year", ylab = "Female Population")
+ggplot2::ggplot(pop, aes(x = year, y = pop_size)) +
+  ggplot2::geom_point() +
+  ggplot2::labs(x = "Year", y = "Female Population Size")
 ```
 As expected, population varies over time.  We could use any time period for our simulation.  But, let's start at `r base.year`.  It's a bit arbitrary, but it's around a time when population was stable, it's in the modern era (not sure how accurate 19th century record keeping was), it will allow us to test over a long time period, and frankly a somewhat lower initial name count is preferable to keep our loops from being too computationally costly (I'd rather this thing not run for hours).
 
@@ -55,40 +57,50 @@ b.base <- b[b$year == base.year, ]
 # Define a function to calculate survivorship for a given year vs base year.
 CalcSurv <- function(x) {sum(b.base$name %in% x) / nrow(b.base)}
 
-# Calculate survivorship over time for real data.
+# Calculate survivorship over time for real data and plot.
 surv.r <- b[b$year > base.year & b$year <= (base.year + n.years), c(1, 3)] %>%
   group_by(year) %>%
   summarize(survivorship = CalcSurv(name))
-plot(surv.r$year, surv.r$survivorship, xlab = "Year", ylab = "Survivorship")
+ggplot2::ggplot(surv.r, aes(x = year, y = survivorship)) +
+  ggplot2::geom_point() +
+  ggplot2::labs(x = "Year", y = "Female Name Survivorship")
 ```
-The relationship looks more or less linear, so let's fit a linear model to it and extract the slope.
+The relationship looks more or less linear, so let's fit a linear model to it and extract the results.
 
-```{r explore_surv_mod, echo=FALSE, out.width="75%", out.height="75%", fig.align='center'}
+```{r explore_surv_mod, echo=FALSE, out.width="75%", out.height="75%", fig.align='center', error=FALSE, warning=FALSE, message=FALSE}
 # Fit a linear model to the data, plot it, and extract its slope
-plot(surv.r$year, surv.r$survivorship, xlab = "Year", ylab = "Survivorship")
 surv.m <- lm(data = surv.r, survivorship ~ year)
-abline(surv.m)
+ggplot2::ggplot(surv.r, aes(x = year, y = survivorship)) +
+  ggplot2::geom_point() +
+  ggplot2::stat_smooth(method = "lm") +
+  ggplot2::labs(
+    x = "Year",
+    y = "Female Name Survivorship",
+    title = paste(
+      "R2 = ", signif(summary(surv.m)$r.squared, 3),
+      " Intercept =", signif(surv.m$coef[[1]], 2),
+      " Slope =", signif(surv.m$coef[[2]], 3),
+      " P-value =", signif(summary(surv.m)$coef[2,4], 3)))
 slope.r <- surv.m$coefficients[2][[1]]
 ```
 
-The R-squared of the model is great, `r round(summary(surv.m)$r.squared, digits = 3)`, so a linear model fits the data reasonably well. The slope of the model is `r round(slope.r, digits = 3)`.
+The R-squared of the model is great, `r round(summary(surv.m)$r.squared, digits = 3)`, so a linear model fits the data reasonably well.
 
 The slope of a linear model fit on survivorship over time might be an interesting parameter to test. If there is selective pressure on names, we might expect survivorship of a neutral model to decrease at a faster or slower rate than we see in the actual population.  It's a reasonable supposition...let's go with it!
 
-Now, we need to pick a neutral model to simulate.  We'll keep it simple.  We only care about survivorship of names in `r base.year`, so we'll begin with all names in `r base.year` in proportion to their popularity that year.  To simulate name inheritance in 1921, we'll randomly sample a number of names from the `r base.year` name pool equal to the 1921 real world population.  We'll continue to sample in the same way, iteratively sampling from the name pool in the prior year, for `r n.years` years following `r base.year`. This is a very simple and of course unrealistic model (it assumes that parents have knowledge of all names in the prior year). But, it is neutral since inheritance is purely stochastic and not impacted by selective pressure.
+Now, we need to pick a neutral model to simulate.  We'll keep it simple.  We only care about survivorship of names in `r base.year`, so we'll begin with all names in `r base.year` in proportion to their popularity that year.  To simulate name inheritance in `r base.year + 1`, we'll randomly sample a number of names from the `r base.year` name pool equal to the `r base.year + 1` real world population.  We'll continue to sample in the same way, iteratively sampling from the name pool in the prior year, for `r n.years` years following `r base.year`. This is a very simple and of course unrealistic model (it assumes that parents have knowledge of all names in the prior year). But, it is neutral since inheritance is purely stochastic and not impacted by selective pressure.
 
-So, we're all set.  Now all we need to do is run our simulation `r n.reps` times, fit a linear model to each run, extract the slope from each model, and plot a histogram of slopes to construct a distribution of slopes to ascertain the range of slopes our neutral model is expected to produce.  This is analogous to taking a sample from a population, estimating the sample distribution based on the count and standard deviation of the sample, and evaluating a claim about a test statistic based on whether or not it falls within the hypothetical sample distribution.  The main difference is there here we actually derive our sample distribution out of simulation runs!  If the slope of the model fit on real world survivorship falls within the histogram of slopes of simulation runs of our neutral model, then we will believe that the neutral model could explain the real world data.  If it does not, we will say that it is unlikely that the neutral model could have produced the real world data.
+So, we're all set.  Now all we need to do is run our simulation `r n.reps` times, fit a linear model to each run, extract the slope from each model, and plot a histogram of slopes to construct a distribution to ascertain the range of slopes our neutral model is expected to produce.  This is analogous to taking a sample from a population, estimating the sample distribution based on the count and standard deviation of the sample, and evaluating a claim about a test statistic based on whether or not it falls within the hypothetical sample distribution.  The main difference is there here we actually derive our sample distribution out of simulation runs!  If the slope of the model fit on real world survivorship falls within 95% of the slopes of simulation runs of our neutral model, then we will believe that the neutral model could explain the real world data.  If it does not, we will say that it is unlikely that the neutral model could have produced the real world data.
 
 ```{r simulate_one, echo=FALSE, error=FALSE, warning=FALSE, message=FALSE}
 # Create a "name pool" for the base year where each name appears with the same
 # frequency it did in the real world population.
 names.s <- c()
 for (i in 1:nrow(b.base)) {
-  temp <- rep(b.base[[i, 3]], each = b.base[[i, 4]])
-  names.s <- append(names.s, temp)
+  names.s <- append(names.s, rep(b.base[[i, 3]], each = b.base[[i, 4]]))
 }
 
-# Create global objects for the simulation to act upon.
+# Create global objects to store simulation output.
 # 1) A DF to contain the results for each year of a given simulation run. This
 # will contain the year, sampled names, and survivorship.
 # 2) An empty list to store each simulation run.
@@ -104,39 +116,59 @@ slopes <- data.frame(run = integer(), slope = integer())
 # Simulate the neutral model per the base year, number of years, and number of
 # simulation reps set above.
 for (i in 1:n.reps) {
-  run.hist <- seed
   for (j in 1:n.years) {
-    smp <- sample(run.hist[[j, 2]], pop[[j + 1, 2]], replace = TRUE)
-    run.hist.row <- data.frame(
-      year = j + base.year,
-      data = I(list(smp)),
-      surv = CalcSurv(smp))
-    run.hist <- rbind(run.hist, run.hist.row)
-    if(j == n.years) {complete.runs[[i]] <- run.hist[-1, ]}
+    smp <- sample(seed[[j, 2]], pop[[j + 1, 2]], replace = TRUE)
+    seed <- rbind(
+      seed,
+      data.frame(
+        year = j + base.year,
+        data = I(list(smp)),
+        surv = CalcSurv(smp)))
+    if(j == n.years) {
+      complete.runs[[i]] <- seed[-1, ]
+      seed <- seed[1, ]
+      }
   }
 }
 
 # For each simulation run, fit a linear model, extract the slope, and save it to
 # the slope vector.
 for (i in 1:n.reps) {
-  temp <- data.frame(
-    run = i,
-    slope = lm(
-      complete.runs[[i]]$surv ~ complete.runs[[i]]$year,
-      data = complete.runs[[i]])$coefficients[[2]])
-  slopes <- rbind(slopes, temp)
+  slopes <- rbind(
+    slopes,
+    data.frame(
+      run = i,
+      slope = lm(
+        complete.runs[[i]]$surv ~ complete.runs[[i]]$year,
+        data = complete.runs[[i]])$coefficients[[2]]))
 }
 
-# Plot a histogram of the slopes for all runs of the simulation vs the slope
-# of the actual population.
-ggplot2::ggplot(slopes, aes(x = slope)) +
+# Store a histogram of the slopes for all runs of the simulation vs the slope
+# of the actual population as an object. Then, call it.  We do this so that we
+# can extract the lower x limit and use it to set the lower x limit for a later
+# plot.
+plt <- ggplot2::ggplot(slopes, aes(x = slope)) +
   ggplot2::geom_histogram() +
-  ggplot2::geom_point(aes(x = slope.r, y = 0), colour = "blue", size = 6, shape = 8)
+  ggplot2::geom_point(
+    aes(x = slope.r, y = 0),
+    colour = "blue",
+    size = 6,
+    shape = 8) +
+  ggplot2::geom_text(
+    aes(x = arrange(slopes, slope)[100, 2], y = 20),
+    label = "Simulation Slopes",
+    size = 3) +
+  ggplot2::geom_text(
+    aes(x = slope.r, y = 2),
+    label = "Real Slope",
+    size = 3) +
+  ggplot2::labs(x = "Slope", y = "Count")
+plt
 ```
 
 What do you know?  The real world slope fell far outside of the histogram of simulation runs! Specifically, it was far to the right of the simulations, meaning that the neutral model produced results in which survivorship declined much faster than we see in reality.  What could explain that?
 
-One possibility is that parents might have a preference for some names over others (i.e., that selective pressure acts on name inheritence!).  For example, perhaps parents tend to prefer rare names and avoid common names. Who wants to be like everyone else? At some point, [how many Olivias](https://www.ssa.gov/oact/babynames/top5names.html) can there be?
+One possibility is that parents might have a preference for some names over others (i.e., that selective pressure acts on name inheritence).  For example, perhaps parents tend to prefer rare names and avoid common names. Who wants to be like everyone else? At some point, [how many Olivias](https://www.ssa.gov/oact/babynames/top5names.html) can there be?
 
 To test this, instead of simulating a truly neutral model, let's simulate a model in which some names are fitter than others. This is arbitrary, but let's say that the top `r scales::percent(perc)` of names by frequency in any given year get a `r scales::percent(wt)` downgrade in their likelihood of being inherited and the bottom `r scales::percent(perc)` get a `r scales::percent(wt)` boost. The model will otherwise be identical.  We'll still start in `r base.year`, sample each year from the names of the previous run, and run it for `r n.years` years across `r n.reps` simulation runs.
 
@@ -144,10 +176,9 @@ What happens if we run a model like this?
 
 ```{r simulate_two, echo=FALSE, error=FALSE, warning=FALSE, message=FALSE}
 # Define a function that takes a vector of names and returns a vector of weights
-# of equal length.  Weighting is according to frequency of a given  element
-# within the name vector, with the weights of the top 10% of names by frequency
-# downgraded by 10% and the weights of the bottom 10% of names by frequency
-# upgraded by 10%.
+# of equal length per the wt and perc populations set above.
+# NOTE: I feel like there must be a more elegant way to do this, but I didn't
+# figure one out.
 CreateWeightsVector <- function(x) {
   weights.by.name <- data.frame(names = x) %>%
     dplyr::group_by(names) %>%
@@ -170,7 +201,7 @@ CreateWeightsVector <- function(x) {
 }
 
 # Just as in simulation_one, create 3 global objects to store simulation output.
-# The only addition is an additional column for weights in the seed object.
+# The only change is an additional column for weights in the seed object.
 seed.w <- data.frame(
   year = base.year,
   data = I(list(names.s)),
@@ -181,37 +212,56 @@ slopes.w <- data.frame(run = integer(), slope = integer())
 
 # Rerun simulation with weights.
 for (i in 1:n.reps) {
-  run.hist <- seed.w
   for (j in 1:n.years) {
     smp <- sample(
-      run.hist[[j, 2]],
+      seed.w[[j, 2]],
       pop[[j + 1, 2]],
-      prob = run.hist[[j, 3]],
+      prob = seed.w[[j, 3]],
       replace = TRUE)
-    run.hist.row <- data.frame(
-      year = j + base.year,
-      data = I(list(smp)),
-      weights = I(list(CreateWeightsVector(smp))),
-      surv = CalcSurv(smp))
-    run.hist <- rbind(run.hist, run.hist.row)
-    if(j == n.years) {complete.runs.w[[i]] <- run.hist[-1, ]}
+    seed.w <- rbind(
+      seed.w,  
+      data.frame(
+        year = j + base.year,
+        data = I(list(smp)),
+        weights = I(list(CreateWeightsVector(smp))),
+        surv = CalcSurv(smp)))
+    if(j == n.years) {
+      complete.runs.w[[i]] <- seed.w[-1, ]
+      seed.w <- seed.w[1, ]
+      }
   }
 }
 
 # Fit linear models.
 for (i in 1:n.reps) {
-  temp <- data.frame(
-    run = i,
-    slope = lm(
-      complete.runs.w[[i]]$surv ~ complete.runs.w[[i]]$year,
-      data = complete.runs.w[[i]])$coefficients[[2]])
-  slopes.w <- rbind(slopes.w, temp)
+  slopes.w <- rbind(
+    slopes.w,
+    data.frame(
+      run = i,
+      slope = lm(
+        complete.runs.w[[i]]$surv ~ complete.runs.w[[i]]$year,
+        data = complete.runs.w[[i]])$coefficients[[2]]))
 }
 
 # Plot output.
-ggplot(slopes.w, aes(x = slope)) +
-  geom_histogram() +
-  geom_point(aes(x = slope.r, y = 0), colour = "blue", size = 6, shape = 8)
+ggplot2::ggplot(slopes.w, aes(x = slope)) +
+  ggplot2::geom_histogram() +
+  ggplot2::geom_point(
+    aes(x = slope.r, y = 0),
+    colour = "blue",
+    size = 6,
+    shape = 8) +
+  ggplot2::geom_text(
+    aes(x = arrange(slopes.w, slope)[100, 2], y = 20),
+    label = "Simulation Slopes",
+    size = 3) +  
+  ggplot2::geom_text(
+    aes(x = slope.r, y = 0),
+    label = "Real Slope",
+    nudge_y = 2,
+    size = 3) +
+  ggplot2::labs(x = "Slope", y = "Count") +
+  ggplot2::expand_limits(x = layer_scales(plt)$x$range$range[1])
 
 # Evaluate whether real slope is within 96% confidence intervals
 in.p <- slope.r >= arrange(
