@@ -21,10 +21,10 @@ library(scales)
 # Set simulation parameters: 1) base year, 2) number of simulation reps, 3)
 # number of years after base year to create, 4) weighting factor in weighted
 # model, 5) perc of top/bottom names to have their weight adjusted.
-base.year <- 1920
+base.year <- 1880
 # REMINDER: If you're not going to use 50 reps, update in.p flag indexes.
-n.reps <- 50
-n.years <- 20
+n.reps <- 5
+n.years <- 3
 wt <- .05
 perc <- .1
 ```
@@ -121,7 +121,7 @@ slopes <- list()
 # simulation reps set above.
 for (i in 1:n.reps) {
   for (j in 1:n.years) {
-    smp <- sample(seed[[j, 2]], pop[[j + 1, 2]], replace = TRUE)
+    smp <- sample(seed[[j, 2]], pop.l[[base.year - 1879 + j]], replace = TRUE)
     seed <- rbind(
       seed,
       data.frame(
